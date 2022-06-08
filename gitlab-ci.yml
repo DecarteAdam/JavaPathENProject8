@@ -2,6 +2,7 @@ build-job:
   stage: build
   script:
     - echo "Hello, $GITLAB_USER_LOGIN!"
+    - "curl -X POST --fail -F token=807d1c906d0417d1a3ffed119fd4f6 -F ref=master https://gitlab.com/api/v4/projects/36859131/trigger/pipeline"
 
 test-job1:
   stage: test
