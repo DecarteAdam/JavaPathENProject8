@@ -2,13 +2,7 @@ package tourGuide.service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -20,6 +14,10 @@ import gpsUtil.GpsUtil;
 import gpsUtil.location.Attraction;
 import gpsUtil.location.Location;
 import gpsUtil.location.VisitedLocation;
+import rewardCentral.RewardCentral;
+import tourGuide.dto.LocationByUser;
+import tourGuide.dto.NearestAttraction;
+import tourGuide.dto.projection.ILocationByUser;
 import tourGuide.helper.InternalTestHelper;
 import tourGuide.tracker.Tracker;
 import tourGuide.user.User;
@@ -27,20 +25,29 @@ import tourGuide.user.UserReward;
 import tripPricer.Provider;
 import tripPricer.TripPricer;
 
+import javax.jws.soap.SOAPBinding;
+
 @Service
 public class TourGuideService {
 	private Logger logger = LoggerFactory.getLogger(TourGuideService.class);
 	private final GpsUtil gpsUtil;
 	private final RewardsService rewardsService;
+	private final RewardCentral rewardCentral;
 	private final TripPricer tripPricer = new TripPricer();
 	public final Tracker tracker;
 	boolean testMode = true;
+
+
 	
-	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
+	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService, RewardCentral rewardCentral) {
 		this.gpsUtil = gpsUtil;
 		this.rewardsService = rewardsService;
+		this.rewardCentral = rewardCentral;
 		
 		if(testMode) {
+			logger.info("GpsUtil: ");
+			gpsUtil.getAttractions().stream().map(attraction -> attraction.attractionName).forEach(System.out::println);
+			logger.info("rewardsService: " + rewardsService);
 			logger.info("TestMode enabled");
 			logger.debug("Initializing users");
 			initializeInternalUsers();
@@ -97,8 +104,32 @@ public class TourGuideService {
 				nearbyAttractions.add(attraction);
 			}
 		}
-		
 		return nearbyAttractions;
+	}
+
+	public List<ILocationByUser> getAllCurrentLocations(){
+		List<ILocationByUser> locations = new ArrayList<>();
+		getAllUsers().forEach(user -> locations.add(new LocationByUser(user)));
+		return locations;
+	}
+
+	public List<NearestAttraction> getNearestAttractions(User user){
+		int n = 5;
+		List<NearestAttraction> nearestAttractions = new ArrayList<>();
+		List<Attraction> attractions = gpsUtil.getAttractions()
+				.stream()
+				.sorted(Comparator.comparing(location -> rewardsService.getDistance(location, user.getLastVisitedLocation().location)))
+				.limit(n)
+				.collect(Collectors.toList());
+		attractions.forEach( attraction -> nearestAttractions.add(createNearestAttraction(attraction, user)));
+		return nearestAttractions;
+	}
+
+	private NearestAttraction createNearestAttraction(Attraction attraction, User user){
+		NearestAttraction nearestAttraction = new NearestAttraction(attraction, user);
+		nearestAttraction.setDistance((int)rewardsService.getDistance(attraction, user.getLastVisitedLocation().location));
+		nearestAttraction.setRewardPoints(rewardCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId()));
+		return nearestAttraction;
 	}
 	
 	private void addShutDownHook() {
